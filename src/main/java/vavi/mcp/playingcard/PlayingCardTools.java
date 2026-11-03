@@ -56,16 +56,20 @@ public final class PlayingCardTools {
                 schema(Map.of()), this::listGames);
         add("create_table", """
                 Open a table for a game. Seat order is decided by dice. \
-                Human players are played by you (the client) via the play tool; cpu players are played automatically by the game master.""",
+                players: seats you (the client) play as yourself. \
+                cpu_players: seats the game master plays automatically with a built-in strategy. \
+                llm_players: cpu seats whose turns are handed off to you; play them in the style of their profile. \
+                cpu and llm entries are "Name" or "Name:profile" (profiles: see list_games).""",
                 schema(Map.of(
                         "game", prop("string", "game id from list_games, e.g. daifugo"),
                         "players", array("string", "names of players controlled by the client"),
-                        "cpu_players", array("string", "names of players controlled by the game master"),
+                        "cpu_players", array("string", "\"Name\" or \"Name:profile\", played automatically by the game master"),
+                        "llm_players", array("string", "\"Name\" or \"Name:profile\", cpu seats played by you (the client) in the profile's style"),
                         "seed", prop("integer", "random seed for a reproducible game (optional)"),
                         "options", Map.of("type", "object", "description", "rule options (see list_games), values as strings",
                                 "additionalProperties", Map.of("type", "string"))),
                         "game"), this::createTable);
-        add("start_round", "Shuffle, deal and start the next round at a table. CPU players move until it's a human player's turn.",
+        add("start_round", "Shuffle, deal and start the next round at a table. Built-in CPU players move until it's one of your seats' turn.",
                 schema(Map.of("table", prop("string", "table id")), "table"), this::startRound);
         add("get_state", "Show the table from a player's point of view (their hand is shown, others' are hidden). Omit player for the public view.",
                 schema(Map.of(
@@ -78,7 +82,7 @@ public final class PlayingCardTools {
                         "table", prop("string", "table id"),
                         "player", prop("string", "player name")),
                         "table", "player"), this::legalMoves);
-        add("play", "Make a move for a human player. After the move CPU players move until it's a human player's turn again.",
+        add("play", "Make a move for a seat you control (players and llm_players). After the move, built-in CPU players move until it's one of your seats' turn again.",
                 schema(Map.of(
                         "table", prop("string", "table id"),
                         "player", prop("string", "player name"),
@@ -124,6 +128,8 @@ public final class PlayingCardTools {
             sb.append("name: ").append(rule.name()).append('\n');
             sb.append("players: ").append(rule.minPlayers()).append("..").append(rule.maxPlayers()).append('\n');
             sb.append("options (defaults): ").append(rule.defaultOptions()).append('\n');
+            sb.append("cpu profiles (for cpu_players and llm_players, first is default):\n");
+            rule.cpuProfiles().forEach((k, v) -> sb.append("  ").append(k).append(": ").append(v).append('\n'));
             sb.append(rule.rules()).append('\n');
         }
         return sb.toString();
@@ -132,7 +138,8 @@ public final class PlayingCardTools {
     private String createTable(Map<String, Object> args) {
         List<Player> players = new ArrayList<>();
         strings(args, "players").forEach(n -> players.add(new Player(n, false)));
-        strings(args, "cpu_players").forEach(n -> players.add(new Player(n, true)));
+        strings(args, "cpu_players").forEach(n -> players.add(seat(n, Player.Control.CPU)));
+        strings(args, "llm_players").forEach(n -> players.add(seat(n, Player.Control.LLM)));
         Long seed = args.get("seed") instanceof Number n ? n.longValue() : null;
         Map<String, String> options = new LinkedHashMap<>();
         if (args.get("options") instanceof Map<?, ?> m) {
@@ -242,9 +249,17 @@ public final class PlayingCardTools {
         } else {
             String current = table.state().currentPlayer();
             sb.append(table.render(current));
-            sb.append("waiting for ").append(current).append(" (use legal_moves / play)");
+            String kind = table.seat(current).control() == Player.Control.LLM ? "llm cpu seat " : "";
+            sb.append("waiting for ").append(kind).append(current).append(" (use legal_moves / play with player=").append(current).append(")");
         }
         return sb.toString();
+    }
+
+    /** "Name" or "Name:profile" */
+    private static Player seat(String spec, Player.Control control) {
+        int p = spec.indexOf(':');
+        return p < 0 ? new Player(spec.trim(), control, null)
+                : new Player(spec.substring(0, p).trim(), control, spec.substring(p + 1).trim());
     }
 
     private Table table(Map<String, Object> args) {

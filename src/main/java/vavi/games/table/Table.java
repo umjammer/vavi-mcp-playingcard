@@ -7,6 +7,7 @@
 package vavi.games.table;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -32,6 +33,8 @@ public final class Table {
     private final Map<String, String> options;
     private final Consumer<Table> onRoundFinished;
     private final List<String> setupLog;
+    /** cpu seat name -> strategy */
+    private final Map<String, Strategy> strategies = new HashMap<>();
 
     private int round;
     private GameState state;
@@ -47,6 +50,11 @@ public final class Table {
         this.options = Map.copyOf(options);
         this.setupLog = List.copyOf(setupLog);
         this.onRoundFinished = onRoundFinished;
+        for (Player p : this.seats) {
+            if (p.cpu()) {
+                strategies.put(p.name(), rule.cpuStrategy(p.profile(), random));
+            }
+        }
     }
 
     public String id() { return id; }
@@ -93,7 +101,7 @@ public final class Table {
         requireRound();
         Player p = seat(player);
         if (p.cpu()) {
-            throw new IllegalArgumentException(player + " is a cpu player");
+            throw new IllegalArgumentException(player + " is played by the game master (cpu)");
         }
         List<String> events = new ArrayList<>(state.apply(player, move));
         checkFinished();
@@ -105,14 +113,13 @@ public final class Table {
     public synchronized List<String> autoPlay() {
         requireRound();
         List<String> events = new ArrayList<>();
-        Strategy strategy = rule.cpuStrategy();
         int count = 0;
         while (!state.isFinished() && seat(state.currentPlayer()).cpu()) {
             if (++count > MAX_AUTO_MOVES) {
                 throw new IllegalStateException("cpu auto play does not terminate");
             }
             String current = state.currentPlayer();
-            events.addAll(state.apply(current, strategy.choose(state, current)));
+            events.addAll(state.apply(current, strategies.get(current).choose(state, current)));
             checkFinished();
         }
         return events;
@@ -138,6 +145,13 @@ public final class Table {
                 .orElseThrow(() -> new IllegalArgumentException("no such player at table " + id + ": " + name));
     }
 
+    /** instruction for the client LLM playing a cpu seat */
+    public String persona(Player p) {
+        return p.name() + " is a cpu seat played by you (the client). Play it in the style of profile '" + p.profile()
+                + "': " + rule.cpuProfiles().get(p.profile())
+                + ". Decide only from " + p.name() + "'s own view, as a fair opponent.";
+    }
+
     /** text summary */
     public synchronized String render(String viewer) {
         StringBuilder sb = new StringBuilder();
@@ -146,6 +160,12 @@ public final class Table {
             sb.append("(no round started)\n");
         } else {
             sb.append(state.render(viewer));
+        }
+        if (viewer != null && !viewer.isEmpty()) {
+            Player p = seat(viewer);
+            if (p.control() == Player.Control.LLM) {
+                sb.append(persona(p)).append('\n');
+            }
         }
         return sb.toString();
     }

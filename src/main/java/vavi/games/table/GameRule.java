@@ -43,8 +43,21 @@ public interface GameRule {
     /** starts a new round (a hand of the game) */
     GameState newRound(RoundSetup setup);
 
-    /** strategy used for cpu seats */
-    Strategy cpuStrategy();
+    /**
+     * Strategy profiles for cpu seats, name -> description, the first one is the default.
+     * The description is also given to the client LLM when it plays a cpu seat ({@link Player.Control#LLM}).
+     */
+    default Map<String, String> cpuProfiles() {
+        return Map.of("default", "the built-in cpu");
+    }
+
+    /**
+     * strategy for a cpu seat
+     *
+     * @param profile one of {@link #cpuProfiles()}
+     * @param random seeded random of the table
+     */
+    Strategy cpuStrategy(String profile, RandomGenerator random);
 
     /** game specific title for a finishing place (1 origin, e.g. 1 -> 大富豪), null if none */
     default String title(int place, int players) {

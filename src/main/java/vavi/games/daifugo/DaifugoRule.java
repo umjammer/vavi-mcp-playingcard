@@ -6,7 +6,9 @@
 
 package vavi.games.daifugo;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.random.RandomGenerator;
 
 import vavi.games.table.GameRule;
 import vavi.games.table.GameState;
@@ -25,8 +27,6 @@ public class DaifugoRule implements GameRule {
     public static final String OPTION_EIGHT_CUT = "eight_cut";
     public static final String OPTION_REVOLUTION = "revolution";
     public static final String OPTION_SPADE3 = "spade3";
-
-    private final Strategy strategy = new DaifugoStrategy();
 
     @Override
     public String id() {
@@ -80,8 +80,17 @@ public class DaifugoRule implements GameRule {
     }
 
     @Override
-    public Strategy cpuStrategy() {
-        return strategy;
+    public Map<String, String> cpuProfiles() {
+        Map<String, String> profiles = new LinkedHashMap<>();
+        for (DaifugoStrategy.Profile p : DaifugoStrategy.Profile.values()) {
+            profiles.put(p.id(), p.description());
+        }
+        return profiles;
+    }
+
+    @Override
+    public Strategy cpuStrategy(String profile, RandomGenerator random) {
+        return new DaifugoStrategy(DaifugoStrategy.Profile.of(profile), random);
     }
 
     @Override

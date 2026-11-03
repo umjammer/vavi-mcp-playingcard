@@ -40,16 +40,23 @@ class DaifugoDemoTest {
     @Test
     void demo() {
         GameMaster master = new GameMaster();
-        // seats are "human" so that this test drives every move itself and can print the hands;
-        // the moves are chosen by the cpu strategy
-        List<Player> players = List.of(new Player("Alice", false), new Player("Bob", false),
-                new Player("Carol", false), new Player("Dave", false));
+        // seats are client controlled so that this test drives every move itself and can print the hands;
+        // each player's moves are chosen by a different cpu profile
+        Map<String, String> profiles = new java.util.LinkedHashMap<>();
+        profiles.put("Alice", "balanced");
+        profiles.put("Bob", "aggressive");
+        profiles.put("Carol", "cautious");
+        profiles.put("Dave", "random");
+        List<Player> players = profiles.keySet().stream().map(n -> new Player(n, false)).toList();
         Table table = master.createTable("daifugo", players, SEED, Map.of());
-        Strategy strategy = table.rule().cpuStrategy();
+        java.util.Random random = new java.util.Random(SEED);
+        Map<String, Strategy> strategies = new java.util.HashMap<>();
+        profiles.forEach((n, p) -> strategies.put(n, table.rule().cpuStrategy(p, random)));
 
         System.out.println("####################################################");
         System.out.println("# " + table.rule().name() + " demo, seed=" + SEED);
         System.out.println("####################################################");
+        profiles.forEach((n, p) -> System.out.println(n + ": " + p + " - " + table.rule().cpuProfiles().get(p)));
         table.setupLog().forEach(System.out::println);
 
         for (int r = 1; r <= ROUNDS; r++) {
@@ -64,7 +71,7 @@ class DaifugoDemoTest {
             while (!state.isFinished()) {
                 String player = state.currentPlayer();
                 List<Card> hand = ((DaifugoState) state).hand(player);
-                Move move = strategy.choose(state, player);
+                Move move = strategies.get(player).choose(state, player);
                 assertTrue(state.legalMoves(player).contains(move), "strategy must choose a legal move: " + move);
                 List<String> events = table.play(player, move);
                 System.out.printf("  %-5s %-48s | %s%n", player, Card.symbols(hand), events.getFirst());
@@ -85,6 +92,27 @@ class DaifugoDemoTest {
         master.allStats().stream().map(PlayerStats::toString).sorted().forEach(System.out::println);
         assertEquals(ROUNDS * 4, master.allStats().stream().mapToInt(PlayerStats::played).sum());
         assertEquals(ROUNDS, master.allStats().stream().mapToInt(PlayerStats::wins).sum());
+    }
+
+    /** the built-in profiles play against each other */
+    @Test
+    void league() {
+        GameMaster master = new GameMaster();
+        List<Player> players = List.of(
+                new Player("balanced", Player.Control.CPU, "balanced"),
+                new Player("aggressive", Player.Control.CPU, "aggressive"),
+                new Player("cautious", Player.Control.CPU, "cautious"),
+                new Player("random", Player.Control.CPU, "random"));
+        for (long seed = 0; seed < 50; seed++) {
+            Table table = master.createTable("daifugo", players, seed, Map.of());
+            for (int r = 0; r < 4; r++) {
+                table.startRound();
+            }
+        }
+        System.out.println("=== profile league: 50 tables x 4 rounds ===");
+        master.allStats().stream().sorted(java.util.Comparator.comparingInt(PlayerStats::wins).reversed())
+                .forEach(System.out::println);
+        assertEquals(200, master.stats("random").played());
     }
 
     /** many seeded rounds with every option combination must terminate and conserve cards */

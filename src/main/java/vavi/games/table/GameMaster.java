@@ -76,6 +76,7 @@ public final class GameMaster {
         if (new HashSet<>(players.stream().map(Player::name).toList()).size() != players.size()) {
             throw new IllegalArgumentException("player names must be unique: " + players);
         }
+        players = players.stream().map(p -> resolveProfile(rule, p)).toList();
         Map<String, String> merged = new HashMap<>(rule.defaultOptions());
         if (options != null) {
             options.forEach((k, v) -> {
@@ -95,6 +96,24 @@ public final class GameMaster {
         tables.put(id, table);
         players.forEach(p -> stats.computeIfAbsent(p.name(), PlayerStats::new));
         return table;
+    }
+
+    /** fills in the default profile for cpu/llm seats and validates it */
+    private static Player resolveProfile(GameRule rule, Player p) {
+        if (p.control() == Player.Control.CLIENT) {
+            if (p.profile() != null) {
+                throw new IllegalArgumentException(p.name() + " is played by the client, a profile is for cpu or llm seats only");
+            }
+            return p;
+        }
+        Map<String, String> profiles = rule.cpuProfiles();
+        if (p.profile() == null) {
+            return new Player(p.name(), p.control(), profiles.keySet().iterator().next());
+        }
+        if (!profiles.containsKey(p.profile())) {
+            throw new IllegalArgumentException("unknown profile for " + p.name() + ": " + p.profile() + ", available: " + profiles.keySet());
+        }
+        return p;
     }
 
     public Table table(String id) {

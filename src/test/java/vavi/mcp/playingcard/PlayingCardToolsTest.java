@@ -68,6 +68,42 @@ class PlayingCardToolsTest {
         assertTrue(tools.call("get_stats", Map.of("player", "You")).contains("played=1"));
     }
 
+    /** cpu seats handed off to the client LLM: the server stops at their turns */
+    @Test
+    void llmPlayers() {
+        PlayingCardTools tools = new PlayingCardTools(new GameMaster());
+        System.out.println(tools.call("create_table", Map.of(
+                "game", "daifugo",
+                "cpu_players", List.of("Cpu1:aggressive", "Cpu2"),
+                "llm_players", List.of("Llm1:cautious", "Llm2:random"),
+                "seed", 3)));
+        assertTrue(tools.call("list_tables", Map.of()).contains("Llm1(llm:cautious)"));
+        assertTrue(tools.call("list_tables", Map.of()).contains("Cpu2(cpu:balanced)"));
+
+        String out = tools.call("start_round", Map.of("table", "t1"));
+        int turns = 0;
+        while (out.contains("waiting for llm cpu seat")) {
+            String current = out.replaceAll("(?s).*waiting for llm cpu seat (\\w+).*", "$1");
+            assertTrue(out.contains(current + " is a cpu seat played by you"), out);
+            if (turns == 0) {
+                System.out.println(">>> hand-off\n" + out);
+                // the game master never plays an llm seat by itself
+                assertThrows(IllegalArgumentException.class, () -> tools.call("play", Map.of("table", "t1", "player", "Cpu1", "action", "pass")));
+            }
+            String legal = tools.call("legal_moves", Map.of("table", "t1", "player", current));
+            String[] words = legal.lines().skip(1).findFirst().orElseThrow().split("\\(")[0].trim().split("\\s+");
+            Map<String, Object> args = words[0].equals("pass")
+                    ? Map.of("table", "t1", "player", current, "action", "pass")
+                    : Map.of("table", "t1", "player", current, "action", "play", "cards", List.of(words).subList(1, words.length));
+            out = tools.call("play", args);
+            assertTrue(++turns < 300);
+        }
+        assertTrue(out.contains("round over"), out);
+        assertTrue(turns > 0);
+        assertThrows(IllegalArgumentException.class, () -> tools.call("create_table", Map.of(
+                "game", "daifugo", "cpu_players", List.of("A:genius", "B", "C"))));
+    }
+
     @Test
     void errors() {
         PlayingCardTools tools = new PlayingCardTools(new GameMaster());
