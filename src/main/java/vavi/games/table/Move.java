@@ -24,6 +24,7 @@ public record Move(String action, List<Card> cards) {
 
     public static final String PLAY = "play";
     public static final String PASS = "pass";
+    public static final String GIVE = "give";
 
     public Move {
         action = action.toLowerCase();
@@ -36,6 +37,10 @@ public record Move(String action, List<Card> cards) {
 
     public static Move play(List<Card> cards) {
         return new Move(PLAY, cards);
+    }
+
+    public static Move give(List<Card> cards) {
+        return new Move(GIVE, cards);
     }
 
     public boolean isPass() {

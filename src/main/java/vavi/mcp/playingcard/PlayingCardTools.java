@@ -86,8 +86,8 @@ public final class PlayingCardTools {
                 schema(Map.of(
                         "table", prop("string", "table id"),
                         "player", prop("string", "player name"),
-                        "action", Map.of("type", "string", "description", "move action, e.g. play or pass", "enum", List.of("play", "pass")),
-                        "cards", array("string", "card codes for play, e.g. [\"S3\",\"H3\"], JK for a joker")),
+                        "action", Map.of("type", "string", "description", "play, pass, or give (card exchange)", "enum", List.of("play", "pass", "give")),
+                        "cards", array("string", "card codes for play or give, e.g. [\"S3\",\"H3\"], JK for a joker")),
                         "table", "player", "action"), this::play);
         add("get_log", "Show every event of the current round at a table.",
                 schema(Map.of("table", prop("string", "table id")), "table"), this::getLog);
@@ -179,8 +179,16 @@ public final class PlayingCardTools {
         if (moves.isEmpty()) {
             return "it's not " + player + "'s turn, it's " + table.state().currentPlayer() + "'s turn";
         }
+        if (moves.size() > 1 && moves.stream().allMatch(m -> m.action().equals(Move.GIVE))) {
+            // card exchange: listing every combination is too long, summarize
+            java.util.Set<Card> cards = new java.util.LinkedHashSet<>();
+            moves.forEach(m -> cards.addAll(m.cards()));
+            return "card exchange: " + player + " gives exactly " + moves.getFirst().cards().size()
+                    + " card(s), any of: " + Card.codes(cards) + "\n"
+                    + "e.g. give " + Card.codes(moves.getFirst().cards());
+        }
         return moves.size() + " legal moves for " + player + ":\n" + moves.stream()
-                .map(m -> m.isPass() ? "pass" : "play " + Card.codes(m.cards()) + "   (" + Card.symbols(m.cards()) + ")")
+                .map(m -> m.isPass() ? "pass" : m.action() + " " + Card.codes(m.cards()) + "   (" + Card.symbols(m.cards()) + ")")
                 .collect(Collectors.joining("\n"));
     }
 

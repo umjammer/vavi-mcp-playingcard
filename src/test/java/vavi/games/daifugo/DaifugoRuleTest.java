@@ -29,10 +29,80 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DaifugoRuleTest {
 
     static DaifugoState state(String leader, Map<String, String> hands) {
+        return state(leader, hands, Map.of());
+    }
+
+    static DaifugoState state(String leader, Map<String, String> hands, Map<String, String> options) {
         List<String> names = List.copyOf(new java.util.TreeMap<>(hands).keySet());
         Map<String, List<Card>> cards = new java.util.HashMap<>();
         hands.forEach((k, v) -> cards.put(k, Card.parseAll(v)));
-        return new DaifugoState(names, cards, leader, Map.of());
+        return new DaifugoState(names, cards, leader, options);
+    }
+
+    @Test
+    void coverWithMore() {
+        Map<String, String> hands = Map.of(
+                "A", "S7 H7 C4",
+                "B", "SJ HJ DJ C5",
+                "C", "S9 H9 D9 C9 C6");
+        // standard rule: a pair must be answered by a pair
+        DaifugoState std = state("A", hands);
+        play(std, "A", "S7 H7");
+        assertThrows(IllegalArgumentException.class, () -> play(std, "B", "SJ HJ DJ"));
+        assertTrue(std.legalMoves("B").contains(Move.play(Card.parseAll("SJ HJ"))), "a pair from the triple is fine");
+
+        DaifugoState s = state("A", hands, Map.of("cover_with_more", "true"));
+        play(s, "A", "S7 H7");
+        assertTrue(s.legalMoves("B").contains(Move.play(Card.parseAll("SJ HJ DJ"))));
+        play(s, "B", "SJ HJ DJ");
+        // now at least 3 cards are needed: a quad of 9s is weaker than Js, so no
+        assertThrows(IllegalArgumentException.class, () -> play(s, "C", "S9 H9"));
+        assertThrows(IllegalArgumentException.class, () -> play(s, "C", "S9 H9 D9 C9"));
+        pass(s, "C");
+    }
+
+    @Test
+    void exchange() {
+        List<vavi.games.table.Player> seats = List.of(new vavi.games.table.Player("A", false), new vavi.games.table.Player("B", false),
+                new vavi.games.table.Player("C", false), new vavi.games.table.Player("D", false));
+        // previous round: D 大富豪, C 富豪, B 貧民, A 大貧民
+        DaifugoState s = (DaifugoState) new DaifugoRule().newRound(new vavi.games.table.GameRule.RoundSetup(
+                seats, 2, List.of("D", "C", "B", "A"), new java.util.Random(1), DaifugoRule.DEFAULT_OPTIONS));
+        s.log().forEach(e -> System.out.println("  " + e));
+        assertTrue(s.exchanging());
+        assertEquals("D", s.currentPlayer());
+        assertEquals(2, s.giveBackCount());
+        assertEquals("A", s.giveBackTo());
+        assertEquals(15, s.hand("D").size(), "13 + 2 from 大貧民");
+        assertEquals(12, s.hand("A").size(), "14 (dealt first) - 2");
+        assertEquals(15 * 14 / 2, s.legalMoves("D").size(), "any 2 of 15 cards");
+
+        assertThrows(IllegalArgumentException.class, () -> play(s, "D", Card.codes(s.hand("D").subList(0, 1))), "exchange first");
+        assertThrows(IllegalArgumentException.class, () -> s.apply("D", Move.give(s.hand("D").subList(0, 1))), "exactly 2");
+        // 大富豪 may give back any cards, even the strongest
+        List<Card> back = s.hand("D").subList(13, 15);
+        s.apply("D", Move.give(back));
+        assertTrue(s.hand("A").containsAll(back));
+        assertEquals(14, s.hand("A").size());
+        assertEquals(13, s.hand("D").size());
+
+        assertEquals("C", s.currentPlayer());
+        assertEquals(1, s.giveBackCount());
+        assertEquals("B", s.giveBackTo());
+        Move cpu = s.legalMoves("C").isEmpty() ? null : DaifugoStrategy.giveBack(s.hand("C"), 1);
+        assertTrue(s.legalMoves("C").contains(cpu));
+        s.apply("C", cpu);
+
+        assertFalse(s.exchanging());
+        assertEquals("A", s.currentPlayer(), "大貧民 leads");
+        assertEquals(53, s.players().stream().mapToInt(p -> s.hand(p).size()).sum());
+        s.log().stream().skip(5).forEach(e -> System.out.println("  " + e));
+    }
+
+    @Test
+    void cpuGiveBackKeepsGroups() {
+        Move m = DaifugoStrategy.giveBack(Card.parseAll("S3 H3 D4 S5 H6 H6 JK"), 2);
+        assertEquals(Move.give(Card.parseAll("D4 S5")), m);
     }
 
     static List<String> play(DaifugoState s, String player, String codes) {

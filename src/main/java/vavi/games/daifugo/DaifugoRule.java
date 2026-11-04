@@ -27,6 +27,10 @@ public class DaifugoRule implements GameRule {
     public static final String OPTION_EIGHT_CUT = "eight_cut";
     public static final String OPTION_REVOLUTION = "revolution";
     public static final String OPTION_SPADE3 = "spade3";
+    public static final String OPTION_COVER_WITH_MORE = "cover_with_more";
+
+    static final Map<String, String> DEFAULT_OPTIONS = Map.of(OPTION_JOKERS, "1", OPTION_EIGHT_CUT, "true",
+            OPTION_REVOLUTION, "true", OPTION_SPADE3, "true", OPTION_COVER_WITH_MORE, "false");
 
     @Override
     public String id() {
@@ -51,10 +55,14 @@ public class DaifugoRule implements GameRule {
                 - 8切り (eight_cut): playing any 8 clears the field immediately, the same player leads again.
                 - 革命 (revolution): playing 4+ of a kind reverses the card order (the joker stays strongest).
                 - スペ3返し (spade3): the ♠3 beats a single joker.
+                - cover_with_more (off by default): a single or group may be covered by a stronger group
+                  of more cards, e.g. ♠J ♥J ♦J on a pair of 7s. Sequences still need the same length.
                 - Finishing order gives titles: 大富豪, 富豪, 平民..., 貧民, 大貧民.
-                - From round 2: 大貧民 gives their 2 strongest cards to 大富豪 and gets the 2 weakest back
-                  (貧民/富豪 swap 1 card with 4+ players). 大貧民 leads. In round 1 the ♦3 holder leads.
-                Moves: action "play" with card codes, e.g. ["S3","H3"], or action "pass".
+                - From round 2: 大貧民 must give their 2 strongest cards to 大富豪, then 大富豪 chooses any 2 cards
+                  to give back (action "give"). With 4+ players 貧民 and 富豪 do the same with 1 card.
+                  Then 大貧民 leads. In round 1 the ♦3 holder leads.
+                Moves: action "play" with card codes, e.g. ["S3","H3"], action "pass",
+                or action "give" with card codes during the card exchange.
                 Card codes: suit S H D C + rank A 2..10 J Q K (e.g. "D10", "CQ"); "JK" for a joker.
                 """;
     }
@@ -71,7 +79,7 @@ public class DaifugoRule implements GameRule {
 
     @Override
     public Map<String, String> defaultOptions() {
-        return Map.of(OPTION_JOKERS, "1", OPTION_EIGHT_CUT, "true", OPTION_REVOLUTION, "true", OPTION_SPADE3, "true");
+        return DEFAULT_OPTIONS;
     }
 
     @Override

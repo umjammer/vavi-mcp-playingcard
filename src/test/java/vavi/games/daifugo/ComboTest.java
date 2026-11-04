@@ -63,6 +63,17 @@ class ComboTest {
     }
 
     @Test
+    void coverWithMore() {
+        assertFalse(combo("SJ HJ DJ").beats(combo("S7 H7"), true, false));
+        assertTrue(combo("SJ HJ DJ").beats(combo("S7 H7"), true, true));
+        assertTrue(combo("SJ HJ DJ CJ").beats(combo("S7 H7"), true, true));
+        assertTrue(combo("SJ HJ").beats(combo("S7"), true, true));
+        assertFalse(combo("S5 H5 D5").beats(combo("S7 H7"), true, true), "still needs to be stronger");
+        assertFalse(combo("S7").beats(combo("S5 H5"), true, true), "fewer cards never cover more");
+        assertFalse(combo("D4 D5 D6 D7").beats(combo("S3 S4 S5"), true, true), "sequences keep the same length");
+    }
+
+    @Test
     void revolution() {
         assertTrue(combo("S3", true).beats(combo("S2", true), true));
         assertTrue(combo("JK", true).beats(combo("S3", true), true), "joker stays strongest");

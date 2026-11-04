@@ -6,11 +6,15 @@
 
 package vavi.games.daifugo;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.random.RandomGenerator;
+import java.util.stream.Collectors;
 
 import vavi.games.card.Card;
+import vavi.games.card.Rank;
 import vavi.games.table.GameState;
 import vavi.games.table.Move;
 import vavi.games.table.Strategy;
@@ -115,6 +119,9 @@ public class DaifugoStrategy implements Strategy {
             return moves.get(random.nextInt(moves.size()));
         }
         List<Card> hand = state.hand(player);
+        if (state.exchanging()) {
+            return giveBack(hand, state.giveBackCount());
+        }
         boolean leading = state.field() == null;
         boolean endGame = hand.size() <= profile.endGame;
 
@@ -152,6 +159,21 @@ public class DaifugoStrategy implements Strategy {
             }
         }
         return best;
+    }
+
+    /**
+     * カード交換: give back the weakest cards that are not part of a same-rank group,
+     * so pairs and triples stay intact. Jokers are never given.
+     */
+    static Move giveBack(List<Card> hand, int count) {
+        Map<Rank, Long> ranks = hand.stream().filter(c -> c instanceof Card.Standard)
+                .collect(Collectors.groupingBy(c -> ((Card.Standard) c).rank(), Collectors.counting()));
+        List<Card> chosen = new ArrayList<>(hand.stream()
+                .sorted(Comparator.comparingInt((Card c) -> c.isJoker() ? 2 : ranks.get(((Card.Standard) c).rank()) > 1 ? 1 : 0)
+                        .thenComparing(DaifugoState.HAND_ORDER))
+                .limit(count).toList());
+        chosen.sort(DaifugoState.HAND_ORDER);
+        return Move.give(chosen);
     }
 
     private static boolean usesJoker(Move m) {

@@ -37,7 +37,7 @@ claude mcp add playingcard -- java -jar /path/to/vavi-mcp-playingcard-0.0.1-SNAP
 | `start_round` | shuffle, deal, exchange cards (大富豪), and let the CPUs play until a human player's turn |
 | `get_state` | the table from a player's point of view (`reveal_all` for spectating) |
 | `legal_moves` | every legal move for the current player |
-| `play` | `action` = `play` with `cards` (e.g. `["S3","H3"]`, `JK` for a joker), or `pass` |
+| `play` | `action` = `play` with `cards` (e.g. `["S3","H3"]`, `JK` for a joker), `pass`, or `give` with `cards` during the card exchange |
 | `get_log` | events of the current round |
 | `list_tables` / `close_table` | table management |
 | `get_stats` | wins, losses, places, and titles per player |
@@ -96,8 +96,9 @@ return a `GameState` that validates and applies `Move`s, and register the class 
 * singles, groups (pairs, triples, …), and sequences (階段, 3+ cards of the same suit); jokers are wild
 * passing sits you out until the field is cleared
 * 8切り, 革命 (4+ of a kind), スペ3返し — each can be switched off with options `eight_cut`, `revolution`, `spade3`
+* `cover_with_more` (default `false`): a single or group can be covered by a stronger group of more cards, e.g. ♠J ♥J ♦J on a pair of 7s (sequences still need the same length)
 * `jokers`: 0..2 (default 1)
-* titles 大富豪 / 富豪 / 平民 / 貧民 / 大貧民, and card exchange from round 2 (大貧民 ⇄ 大富豪: 2 cards, 貧民 ⇄ 富豪: 1 card); 大貧民 leads
+* titles 大富豪 / 富豪 / 平民 / 貧民 / 大貧民, and card exchange from round 2: 大貧民 must give their 2 strongest cards to 大富豪, and 大富豪 chooses any 2 cards to give back (`give`). With 4+ players, 貧民 and 富豪 do the same with 1 card. Then 大貧民 leads. CPUs give back their weakest cards that aren't part of a pair or larger group.
 
 ## References
 
@@ -108,5 +109,4 @@ return a `GameState` that validates and applies `Move`s, and register the class 
 
 * persist player stats
 * more local rules (縛り, 11バック, 都落ち, …)
-* the 大富豪 choosing which cards to give back in the exchange
 * more games (poker, blackjack, …)

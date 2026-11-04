@@ -55,7 +55,7 @@ class PlayingCardToolsTest {
             String[] words = first.split("\\(")[0].trim().split("\\s+");
             Map<String, Object> args = words[0].equals("pass")
                     ? Map.of("table", "t1", "player", "You", "action", "pass")
-                    : Map.of("table", "t1", "player", "You", "action", "play",
+                    : Map.of("table", "t1", "player", "You", "action", words[0],
                              "cards", List.of(words).subList(1, words.length));
             System.out.println(">>> play action=" + args.get("action") + " cards=" + args.getOrDefault("cards", List.of()));
             System.out.println(tools.call("play", args));
@@ -74,15 +74,27 @@ class PlayingCardToolsTest {
         PlayingCardTools tools = new PlayingCardTools(new GameMaster());
         System.out.println(tools.call("create_table", Map.of(
                 "game", "daifugo",
-                "cpu_players", List.of("Cpu1:aggressive", "Cpu2"),
-                "llm_players", List.of("Llm1:cautious", "Llm2:random"),
+                "cpu_players", List.of("Cpu1:random"),
+                "llm_players", List.of("Llm1:cautious", "Llm2:aggressive", "Llm3"),
                 "seed", 3)));
         assertTrue(tools.call("list_tables", Map.of()).contains("Llm1(llm:cautious)"));
-        assertTrue(tools.call("list_tables", Map.of()).contains("Cpu2(cpu:balanced)"));
+        assertTrue(tools.call("list_tables", Map.of()).contains("Llm3(llm:balanced)"));
+        assertTrue(tools.call("list_tables", Map.of()).contains("Cpu1(cpu:random)"));
 
         String out = tools.call("start_round", Map.of("table", "t1"));
         int turns = 0;
-        while (out.contains("waiting for llm cpu seat")) {
+        boolean exchanged = false;
+        for (int round = 1; round <= 3; round++) {
+          if (round > 1) {
+              out = tools.call("start_round", Map.of("table", "t1"));
+          }
+          while (out.contains("waiting for llm cpu seat")) {
+            if (out.contains("card exchange:") && !exchanged) {
+                exchanged = true;
+                System.out.println(">>> exchange hand-off\n" + out);
+                System.out.println(tools.call("legal_moves", Map.of("table", "t1",
+                        "player", out.replaceAll("(?s).*waiting for llm cpu seat (\\w+).*", "$1"))).lines().limit(4).toList());
+            }
             String current = out.replaceAll("(?s).*waiting for llm cpu seat (\\w+).*", "$1");
             assertTrue(out.contains(current + " is a cpu seat played by you"), out);
             if (turns == 0) {
@@ -91,14 +103,19 @@ class PlayingCardToolsTest {
                 assertThrows(IllegalArgumentException.class, () -> tools.call("play", Map.of("table", "t1", "player", "Cpu1", "action", "pass")));
             }
             String legal = tools.call("legal_moves", Map.of("table", "t1", "player", current));
-            String[] words = legal.lines().skip(1).findFirst().orElseThrow().split("\\(")[0].trim().split("\\s+");
+            String line = legal.startsWith("card exchange")
+                    ? legal.lines().skip(1).findFirst().orElseThrow().replace("e.g. ", "")
+                    : legal.lines().skip(1).findFirst().orElseThrow();
+            String[] words = line.split("\\(")[0].trim().split("\\s+");
             Map<String, Object> args = words[0].equals("pass")
                     ? Map.of("table", "t1", "player", current, "action", "pass")
-                    : Map.of("table", "t1", "player", current, "action", "play", "cards", List.of(words).subList(1, words.length));
+                    : Map.of("table", "t1", "player", current, "action", words[0], "cards", List.of(words).subList(1, words.length));
             out = tools.call("play", args);
-            assertTrue(++turns < 300);
+            assertTrue(++turns < 1000);
+          }
+          assertTrue(out.contains("round over"), out);
         }
-        assertTrue(out.contains("round over"), out);
+        assertTrue(exchanged, "an llm seat got the card exchange in 3 rounds");
         assertTrue(turns > 0);
         assertThrows(IllegalArgumentException.class, () -> tools.call("create_table", Map.of(
                 "game", "daifugo", "cpu_players", List.of("A:genius", "B", "C"))));

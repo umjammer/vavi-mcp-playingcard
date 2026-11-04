@@ -6,8 +6,10 @@
 
 package vavi.games.daifugo;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -44,6 +46,15 @@ public final class DaifugoState implements GameState {
     private final boolean eightCut;
     private final boolean revolutionRule;
     private final boolean spade3;
+    private final boolean coverWithMore;
+
+    /** a richer player still has to give cards back to a poorer one */
+    private record GiveBack(String rich, String poor, int count) {}
+
+    /** exchange phase: give backs not done yet, the first one is the current */
+    private final Deque<GiveBack> giveBacks = new ArrayDeque<>();
+    /** who leads after the exchange */
+    private String leader;
 
     /** seat index of the player to move, -1 when finished */
     private int turn;
@@ -69,6 +80,7 @@ public final class DaifugoState implements GameState {
         this.eightCut = flag(options, DaifugoRule.OPTION_EIGHT_CUT);
         this.revolutionRule = flag(options, DaifugoRule.OPTION_REVOLUTION);
         this.spade3 = flag(options, DaifugoRule.OPTION_SPADE3);
+        this.coverWithMore = flag(options, DaifugoRule.OPTION_COVER_WITH_MORE);
 
         log("=== 大富豪 round " + round + " ===");
         Deck deck = Deck.standard(jokers).shuffle(setup.random());
@@ -86,12 +98,12 @@ public final class DaifugoState implements GameState {
             for (int i = 0; i < n; i++) {
                 previousTitles.put(prev.get(i), Title.of(i + 1, n));
             }
-            exchange(prev.get(n - 1), prev.getFirst(), 2);
+            tribute(prev.get(n - 1), prev.getFirst(), 2);
             if (n >= 4) {
-                exchange(prev.get(n - 2), prev.get(1), 1);
+                tribute(prev.get(n - 2), prev.get(1), 1);
             }
-            turn = names.indexOf(prev.get(n - 1));
-            log(prev.get(n - 1) + " (大貧民) leads");
+            leader = prev.get(n - 1);
+            nextGiveBack();
         } else {
             Card d3 = Card.of(Suit.DIAMONDS, Rank.THREE);
             String holder = names.stream().filter(name -> hands.get(name).contains(d3)).findFirst().orElse(names.getFirst());
@@ -107,6 +119,7 @@ public final class DaifugoState implements GameState {
         this.eightCut = flag(options, DaifugoRule.OPTION_EIGHT_CUT);
         this.revolutionRule = flag(options, DaifugoRule.OPTION_REVOLUTION);
         this.spade3 = flag(options, DaifugoRule.OPTION_SPADE3);
+        this.coverWithMore = flag(options, DaifugoRule.OPTION_COVER_WITH_MORE);
         for (String name : names) {
             List<Card> hand = new ArrayList<>(fixedHands.get(name));
             hand.sort(HAND_ORDER);
@@ -117,23 +130,52 @@ public final class DaifugoState implements GameState {
     }
 
     private static boolean flag(Map<String, String> options, String key) {
-        return Boolean.parseBoolean(options.getOrDefault(key, "true"));
+        return Boolean.parseBoolean(options.getOrDefault(key, DaifugoRule.DEFAULT_OPTIONS.get(key)));
     }
 
-    /** カード交換: the poorer gives their strongest cards, the richer gives back their weakest */
-    private void exchange(String poor, String rich, int count) {
+    /** カード交換 step 1: the poorer must give their strongest cards, the richer chooses what to give back later */
+    private void tribute(String poor, String rich, int count) {
         List<Card> poorHand = hands.get(poor);
-        List<Card> richHand = hands.get(rich);
         List<Card> give = new ArrayList<>(poorHand.subList(poorHand.size() - count, poorHand.size()));
-        List<Card> back = new ArrayList<>(richHand.subList(0, count));
         poorHand.removeAll(give);
-        richHand.removeAll(back);
-        richHand.addAll(give);
-        poorHand.addAll(back);
-        poorHand.sort(HAND_ORDER);
-        richHand.sort(HAND_ORDER);
+        hands.get(rich).addAll(give);
+        hands.get(rich).sort(HAND_ORDER);
         log("exchange: " + poor + "(" + previousTitles.get(poor) + ") gives " + Card.symbols(give)
-                + " to " + rich + "(" + previousTitles.get(rich) + "), gets back " + Card.symbols(back));
+                + " to " + rich + "(" + previousTitles.get(rich) + ")");
+        giveBacks.add(new GiveBack(rich, poor, count));
+    }
+
+    /** moves to the next give back, or starts the play when all are done */
+    private void nextGiveBack() {
+        GiveBack g = giveBacks.peek();
+        if (g != null) {
+            turn = names.indexOf(g.rich());
+            log(g.rich() + "(" + previousTitles.get(g.rich()) + ") chooses " + g.count() + " card" + (g.count() > 1 ? "s" : "")
+                    + " to give back to " + g.poor() + "(" + previousTitles.get(g.poor()) + ")");
+        } else {
+            turn = names.indexOf(leader);
+            log(leader + " (大貧民) leads");
+        }
+    }
+
+    /** カード交換 step 2: the richer gives back any cards they like */
+    private void giveBack(String player, List<Card> requested) {
+        GiveBack g = giveBacks.peek();
+        if (g == null) {
+            throw new IllegalArgumentException("give is only for the card exchange at the start of a round");
+        }
+        if (requested.size() != g.count()) {
+            throw new IllegalArgumentException(player + " must give exactly " + g.count() + " card" + (g.count() > 1 ? "s" : "")
+                    + " to " + g.poor() + ", got " + requested.size());
+        }
+        List<Card> cards = resolve(player, requested);
+        hands.get(player).removeAll(cards);
+        hands.get(g.poor()).addAll(cards);
+        hands.get(g.poor()).sort(HAND_ORDER);
+        log("exchange: " + player + "(" + previousTitles.get(player) + ") gives back " + Card.symbols(cards)
+                + " to " + g.poor() + "(" + previousTitles.get(g.poor()) + ")");
+        giveBacks.poll();
+        nextGiveBack();
     }
 
     private void log(String event) {
@@ -153,6 +195,15 @@ public final class DaifugoState implements GameState {
     public int round() { return round; }
 
     public boolean revolution() { return revolution; }
+
+    /** true while a richer player has to choose cards to give back (the round starts after it) */
+    public boolean exchanging() { return !giveBacks.isEmpty(); }
+
+    /** number of cards the current player must give back, 0 when not exchanging */
+    public int giveBackCount() { return giveBacks.isEmpty() ? 0 : giveBacks.peek().count(); }
+
+    /** who receives the given back cards, null when not exchanging */
+    public String giveBackTo() { return giveBacks.isEmpty() ? null : giveBacks.peek().poor(); }
 
     /** player names in seat order */
     public List<String> players() { return names; }
@@ -193,7 +244,7 @@ public final class DaifugoState implements GameState {
     public Combo evaluate(List<Card> cards) {
         Combo f = field();
         return Combo.interpretations(cards, revolution).stream()
-                .filter(c -> f == null || c.beats(f, spade3))
+                .filter(c -> f == null || c.beats(f, spade3, coverWithMore))
                 .findFirst().orElse(null);
     }
 
@@ -214,6 +265,11 @@ public final class DaifugoState implements GameState {
         if (isFinished() || !player.equals(currentPlayer())) {
             return List.of();
         }
+        if (exchanging()) {
+            List<Move> gives = new ArrayList<>();
+            choose(hands.get(player), giveBackCount(), 0, new ArrayList<>(), gives);
+            return gives;
+        }
         Map<String, Combo> playable = new LinkedHashMap<>();
         for (List<Card> candidate : candidates(hands.get(player))) {
             Combo combo = evaluate(candidate);
@@ -232,6 +288,19 @@ public final class DaifugoState implements GameState {
             moves.add(Move.pass());
         }
         return moves;
+    }
+
+    /** every way to pick {@code count} cards, in hand order */
+    private static void choose(List<Card> hand, int count, int from, List<Card> picked, List<Move> result) {
+        if (picked.size() == count) {
+            result.add(Move.give(picked));
+            return;
+        }
+        for (int i = from; i < hand.size(); i++) {
+            picked.add(hand.get(i));
+            choose(hand, count, i + 1, picked, result);
+            picked.removeLast();
+        }
     }
 
     /** every card set that may form a combo: groups (with jokers) and sequences (with jokers) */
@@ -306,10 +375,15 @@ public final class DaifugoState implements GameState {
             throw new IllegalArgumentException("not " + player + "'s turn, it's " + currentPlayer() + "'s turn");
         }
         int mark = log.size();
+        if (exchanging() && !move.action().equals(Move.GIVE)) {
+            throw new IllegalArgumentException("card exchange first: " + player + " must give " + giveBackCount()
+                    + " card(s) to " + giveBackTo() + " with action give");
+        }
         switch (move.action()) {
+            case Move.GIVE -> giveBack(player, move.cards());
             case Move.PASS -> pass(player);
             case Move.PLAY -> play(player, move.cards());
-            default -> throw new IllegalArgumentException("unknown action: " + move.action() + ", use play or pass");
+            default -> throw new IllegalArgumentException("unknown action: " + move.action() + ", use play, pass or give");
         }
         return List.copyOf(log.subList(mark, log.size()));
     }
@@ -335,7 +409,8 @@ public final class DaifugoState implements GameState {
                         + " (single, same rank group, or 3+ consecutive same suit sequence)");
             }
             throw new IllegalArgumentException(Card.symbols(cards) + " does not beat the field " + field()
-                    + " (need the same kind and number of cards, and stronger" + (revolution ? ", revolution is on" : "") + ")");
+                    + " (need the same kind and " + (coverWithMore ? "at least the same" : "the same") + " number of cards, and stronger"
+                    + (revolution ? ", revolution is on" : "") + ")");
         }
         hands.get(player).removeAll(cards);
         field = combo;
@@ -483,6 +558,10 @@ public final class DaifugoState implements GameState {
         }
         if (isFinished()) {
             sb.append("round finished: ").append(finished).append('\n');
+        } else if (exchanging()) {
+            sb.append("card exchange: ").append(currentPlayer()).append(" (").append(previousTitles.get(currentPlayer()))
+                    .append(") chooses ").append(giveBackCount()).append(" card(s) to give back to ").append(giveBackTo())
+                    .append(", use action give\n");
         } else {
             sb.append("turn: ").append(currentPlayer()).append(field == null ? " (leading)" : "").append('\n');
         }

@@ -86,12 +86,21 @@ public record Combo(Type type, List<Card> cards, int strength) {
         return type == Type.SINGLE && cards.getFirst().equals(Card.of(Suit.SPADES, Rank.THREE));
     }
 
+    /** standard rules: same kind and number of cards */
+    public boolean beats(Combo field, boolean spade3) {
+        return beats(field, spade3, false);
+    }
+
     /**
      * @param field combo on the field, evaluated with the same revolution state
      * @param spade3 enable "♠3 beats a single joker" rule (スペ3返し)
+     * @param coverWithMore a single or group may be covered by a stronger group of more cards
+     *        (e.g. 3 or 4 of a kind on a pair), sequences still need the same length
      */
-    public boolean beats(Combo field, boolean spade3) {
-        if (type != field.type || size() != field.size()) {
+    public boolean beats(Combo field, boolean spade3, boolean coverWithMore) {
+        boolean sameShape = type == field.type && size() == field.size();
+        boolean more = coverWithMore && type != Type.SEQUENCE && field.type != Type.SEQUENCE && size() > field.size();
+        if (!sameShape && !more) {
             return false;
         }
         if (spade3 && isSpade3() && field.isSingleJoker()) {
