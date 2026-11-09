@@ -5,6 +5,8 @@
 
 # vavi-mcp-playingcard
 
+<img alt="image" src="src/test/resources/duke_mcp_playingcard.png" width="160" />
+
 An MCP server that acts as the game master (dealer) for playing card games.
 The server keeps the cards, the players and their win/lose stats, and enforces the rules.
 The AI client plays through tools. Game rules are plugins, and 大富豪 (Daifugo) is included as a sample.
@@ -110,3 +112,7 @@ return a `GameState` that validates and applies `Move`s, and register the class 
 * persist player stats
 * more local rules (縛り, 11バック, 都落ち, …)
 * more games (poker, blackjack, …)
+
+---
+
+<sub>image designed by @umjammer, drawn by nano banana</sub>
